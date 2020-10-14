@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import sys, os
 from math import sin, cos, acos, sqrt, pi, log10, log, exp
 from scipy.optimize import curve_fit, leastsq, minimize
@@ -11,7 +12,15 @@ from EnvGlobals import Glob
 sys.path.append('./bin')
 import mstarsim
 import warnings
+import time
 
+
+def normalize_time_series(tflux_series, normalization):
+        """filter convolution and normalization over immaculate photosphere flux
+        """
+        flux_series = [ [tflux_series[i][0], tflux_series[i][1]/normalization] for i in range(len(tflux_series))]
+            
+        return flux_series
 
 class Starsim_IO: 
     """
@@ -26,9 +35,9 @@ class Starsim_IO:
         if not Glob.inhibit_msg:
             if not Glob.bw: 
                 str_out = "\33["+str(index)+";"+str(color)+"m"+ str_ +"\33[1;m"
-                print str_out
+                print (str_out)
             else:
-                print str_
+                print (str_)
                 
     def read_bz2_file(self, in_file, separator):
         """read a bzip2 compressed file
@@ -148,6 +157,29 @@ class Starsim_IO:
                 
             return time_vector, data
 
+    def print_start_info(self):
+        """
+        """
+        k = random.choice([36,90,92,93,94,96,97])
+        
+        self.print_message('                                                             ', 5, 29)
+        self.print_message('   ░░░░░░░ ░░░░░░░░  ░░░░░  ░░░░░░  ░░░░░░░ ░░ ░░░    ░░░   ', 10,k) 
+        self.print_message('   ▒▒         ▒▒    ▒▒   ▒▒ ▒▒   ▒▒ ▒▒      ▒▒ ▒▒▒▒  ▒▒▒▒   ', 10,k) 
+        self.print_message('   ▒▒▒▒▒▒▒    ▒▒    ▒▒▒▒▒▒▒ ▒▒▒▒▒▒  ▒▒▒▒▒▒▒ ▒▒ ▒▒ ▒▒▒▒ ▒▒   ', 10,k) 
+        self.print_message('        ▓▓    ▓▓    ▓▓   ▓▓ ▓▓   ▓▓      ▓▓ ▓▓ ▓▓  ▓▓  ▓▓   ', 10,k) 
+        self.print_message('   ███████    ██    ██   ██ ██   ██ ███████ ██ ██      ██   ', 10,k)
+        
+        #self.print_message('                                                             ', 10, 2)
+        self.print_message('                STELLAR ACTIVITY SIMULATION                  ', 29, 7)                                     
+        self.print_message('               Albert Rosich (rosich@ice.cat)                ', 40, 6)
+        self.print_message('', 7,90)
+
+        
+        if Glob.ncpus != 0:
+            self.print_message( 'Detected CPUs / using CPUs: ' + str(mp.cpu_count()) + "/" + str(Glob.ncpus), 5, 95)
+            self.print_message('', 5,95)
+            self.print_message('[INIT. STARSIM 2...]', 0, 32)
+         
 class StarsimCommon(Starsim_IO):
     """
     """
@@ -175,12 +207,12 @@ class StarsimCommon(Starsim_IO):
     def random_sin(self, z):
         """returns random number sin distributed [0:z] deg 
         """
-        x = random.uniform(0,z)
-        y = random.uniform(0,1)
+        x = np.random.uniform(0,z)
+        y = np.random.uniform(0,1)
         
-        while y >= sin(pi*x/180.0):
-             x = random.uniform(0,z)
-             y = random.uniform(0,1)
+        while y >= np.sin(np.pi*x/180.0):
+             x = np.random.uniform(0,z)
+             y = np.random.uniform(0,1)
         
         return x
             
@@ -243,6 +275,16 @@ class StarsimCommon(Starsim_IO):
         
         return self.obs_time, self.obs_data, self.y_data, self.err
     
+    def split_list(self, alist, wanted_parts):
+        """
+        """
+        length = len(alist)
+        if length < wanted_parts:
+            wanted_parts = length
+            
+        return [ alist[i*length // wanted_parts: (i+1)*length // wanted_parts]
+                for i in range(wanted_parts) ]
+ 
 class Star(Starsim_IO):
     """star class: packs all parameters related to star parameters
     """   
@@ -276,20 +318,22 @@ class Star(Starsim_IO):
         self.diff_rotation = float(self.conf_file.get('star','diff_rotation')) 
         self.B_coeff = float(self.conf_file.get('star','B_rot'))
         self.C_coeff = float(self.conf_file.get('star','C_rot'))
+        
         #DERIVED PARAMS.
         self.w = 2.0*pi/self.P_rot
         self.m_star = sqrt((self.temp_ph/5777.0)**4.0)
         #self.R_star = sqrt((self.temp_ph/5777.0)**3.0015*27440.03/10.0**self.grav)   #star radius in Rsun
+        
         self.R_star = float(self.conf_file.get('star','R_star'))
         if self.R_star == -1:
             self.R_star = sqrt( (self.m_star**3.5) / (self.temp_ph/5777.0)**4.0  )
-    
+        
     
     def __del__(self):
         """class destructor
         """
-    
-class Spectra(StarsimCommon, Starsim_IO, Star):
+     
+class Spectra(StarsimCommon, Star):
     """
     """
     def __init__(self):
@@ -300,7 +344,8 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
         """creates an instance of class ConfigParser, and read the .conf file. Returns the object created
         ConfigParser, and read the .conf file. Returns the object created
         """
-        conf_file_Object = ConfigParser.ConfigParser()
+
+        conf_file_Object = ConfigParser.ConfigParser( )
         if not conf_file_Object.read([  conf_file_path]):
             print_message( str(conf_file_path) + ": could not be read", 5, 31, inhibit_msg=False)
             sys.exit()
@@ -325,26 +370,11 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
         self.temp_fc = (self.Sim.temp_ph + self.Sim.delta_t_fc) - (self.Sim.temp_ph + self.Sim.delta_t_fc) % 10.0
                 
         if self.spectra_res == 'high':
-            nspres = 63076
-            #number of points depending on spectral range
-            if self.wvmax >= 1350.0 and self.wvmin < 1350.0:
-                n_wv = 20*(1350.0 - self.wvmin) + 10*(self.wvmax - 1350.0)
-            elif self.wvmin > 2500.0:
-                n_wv = 5*(wvmax - wvmin)
-            elif self.wvmax < 1350.0:
-                n_wv = 20*(self.wvmax - self.wvmin)
-            elif self.wvmax > 1350.0 and self.wvmin >= 1350.0 and self.wvmax < 2500.0:
-                n_wv = 10*(self.wvmax - self.wvmin)
-            elif wvmax > 2500.0 and wvmin <= 2500.0:
-                n_wv = 10*(2500.0 - self.wvmin) + 5*(self.wvmax - 2500.0)
-
-            file_name_ph = path + "/precompiled_spectra/spec_" + str(int(self.Sim.temp_ph)) + '_' + str(self.Sim.grav) +  \
-                        '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '.dat.bz2'
-            file_name_sp = path + "/precompiled_spectra/spec_" + str(int(self.temp_sp)) + '_' + str(self.Sim.grav) +  \
-                        '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '.dat.bz2'
-            file_name_fc = path + "/precompiled_spectra/spec_" + str(int(self.temp_fc)) + '_' + str(self.Sim.grav) +  \
-                        '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '.dat.bz2'
-                
+            
+            file_name_ph = path + "/precompiled_spectra/spec_" + str(int(self.Sim.temp_ph)) + '_' + str(self.Sim.grav) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '_hres.dat.bz2'
+            file_name_sp = path + "/precompiled_spectra/spec_" + str(int(self.temp_sp)) + '_' + str(self.Sim.grav) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '_hres.dat.bz2'
+            file_name_fc = path + "/precompiled_spectra/spec_" + str(int(self.temp_fc)) + '_' + str(self.Sim.grav) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '_hres.dat.bz2'
+        
         elif self.spectra_res == 'low':
             
             file_name_ph = path + "/precompiled_spectra/spec_" + str(int(self.Sim.temp_ph)) + '_' + str(self.Sim.grav) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '_lres.dat.bz2'
@@ -369,23 +399,25 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
             spectra_fc = self.read_bz2_file(file_name_fc, ' ')
         
         self.print_message("", 0, 94)
-        self.print_message("Reading .bz2 low-res. precompiled spectra...", 0, 94)
-        self.print_message("    Read photosphere spectra:" + str(file_name_ph), 3, 32)
-        self.print_message("    Read spot spectra:" + str(file_name_sp), 3, 32)
-        self.print_message("    Read faculae spectra:" + str(file_name_fc), 3, 32)
+      
+        if self.spectra_res == 'high':
+            self.print_message("Reading BT-Settl high resolution spectra...", 0, 94)
+        elif self.spectra_res == 'low':
+            self.print_message("Reading BT-Settl low resolution spectra...", 0, 94)
+        
+        self.print_message("    Read photosphere spectra:" + str(file_name_ph), 90, 3)
+        self.print_message("    Read spot spectra:" + str(file_name_sp), 90, 3)
+        self.print_message("    Read faculae spectra:" + str(file_name_fc), 90, 3)
         
         #global wv, flnp_ph, flnp_sp, flnp_fc, flpk_ph, flpk_sp, flpk_fc, dlnp_ph, dlnp_sp, dlnp_fc
         
-        if self.spectra_res == 'high':
-            self.wv = np.zeros(int(n_wv), dtype=float)
-            
-        elif self.spectra_res == 'low':
-            n_wv_ph, n_wv_sp, n_wv_fc  = len(spectra_ph), len(spectra_sp), len(spectra_fc)
-            #find the min number of points in all spectras
-            n_wv = min(n_wv_ph,n_wv_sp,n_wv_fc)
-            self.print_message("    (Number of points in the spectras: " + str(n_wv) + ')', index=0, color=94)
-            self.wv = np.zeros(int(n_wv), dtype=float)
-        
+        n_wv_ph, n_wv_sp, n_wv_fc  = len(spectra_ph), len(spectra_sp), len(spectra_fc)
+        #find the min number of points in all spectras
+        n_wv = min(n_wv_ph,n_wv_sp,n_wv_fc)
+        self.print_message("    (Number of points in the spectras: " + str(n_wv) + ')', index=0, color=37)
+        self.wv = np.zeros(int(n_wv), dtype=float)
+      
+   
         self.flnp_ph, self.flnp_sp, self.flnp_fc = np.zeros(int(n_wv), dtype=float), np.zeros(int(n_wv), dtype=float), np.zeros(int(n_wv), dtype=float)
         self.flpk_ph, self.flpk_sp, self.flpk_fc = np.zeros(int(n_wv), dtype=float), np.zeros(int(n_wv), dtype=float), np.zeros(int(n_wv), dtype=float)
         self.dlnp_ph, self.dlnp_sp, self.dlnp_fc = np.zeros((n_wv,18), dtype=float), np.zeros((n_wv,18), dtype=float), np.zeros((n_wv,18), dtype=float)
@@ -426,26 +458,23 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
             if temp >= tmod[j] and temp < tmod[j+1]:
                 ite1_f = tmod[j]
                 ite2_f = tmod[j+1]
-        path = str(conf_file.get('files','bt_settl_path'))
+        
         #define the file names
         if self.spectra_res == 'high':
+            path = str(conf_file.get('files','bt_settl_path_hres'))
             name_ite1 =  path + '/lte0' + str(int(ite1_f)/100) + '-' + str(gmof) + '-0.0a+0.0.BT-Settl.spec.7_mod'
             name_ite2 = path + '/lte0' + str(int(ite2_f)/100) + '-' + str(gmof) + '-0.0a+0.0.BT-Settl.spec.7_mod'
         elif self.spectra_res == 'low':
+            path = str(conf_file.get('files','bt_settl_path_lres'))
             name_ite1 =  path + '/lte0' + str(int(ite1_f)/100) + '-' + str(gmof) + '-0.0a+0.0.BT-Settl.spec.7_mod_lres'
             name_ite2 = path + '/lte0' + str(int(ite2_f)/100) + '-' + str(gmof) + '-0.0a+0.0.BT-Settl.spec.7_mod_lres'
         #and read it
         ite1 = self.read_file(name_ite1, ' ')
         ite2 = self.read_file(name_ite2, ' ')
     
-        if self.spectra_res == 'low':
-            wav, fint = np.zeros(int(min(len(ite1), len(ite2)))), np.zeros(int(min(len(ite1), len(ite2))))
-            out_spectra = np.zeros([min(len(ite1)/10,len(ite2)/10),2])
-        
-        elif self.spectra_res == 'high':
-            wav, fint = np.zeros(int(min(len(ite1), len(ite2)))), np.zeros(int(min(len(ite1), len(ite2))))
-            out_spectra = np.zeros([len(ite2)/10,2])
-        
+        wav, fint = np.zeros(int(min(len(ite1), len(ite2)))), np.zeros(int(min(len(ite1), len(ite2))))
+        out_spectra = np.zeros([len(ite2)/10,2])
+       
         #interpolation
         for j in range(min(len(ite1), len(ite2))):
             wav[j] = float(ite1[j][0])/10.0   #wavelength in nanometers
@@ -590,21 +619,12 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
         """generates the spectra files
         """ 
         self.print_message("Spectra not found in ./precompiled_spectra. Generating...", 0, 91)
-        self.print_message("Reading BT-Settl low resolution spectra...", 3, 32)
         
         if self.spectra_res == 'high':
-            nspres = 63076
-            if self.wvmax >= 1350.0 and self.wvmin < 1350.0:
-                n_wv = 20*(1350.0 - self.wvmin) + 10*(self.wvmax-1350.0)
-            elif self.wvmin >= 2500.0:
-                n_wv = 5*(self.wvmax - self.wvmin)
-            elif self.wvmax < 1350.0:   
-                n_wv = 20*(self.wvmax - self.wvmin)
-            elif self.wvmax > 1350.0 and self.wvmin >= 1350.0 and self.wvmax < 2500.0:
-                n_wv = 10*(self.wvmax - self.wvmin)
-            elif self.wvmax >= 2500.0 and self.wvmin < 2500.0:
-                n_wv = 10*(2500.0 - self.wvmin) + 5*(self.wvmax - 2500.0)
-                
+            self.print_message("Reading BT-Settl high resolution spectra...", 3, 32)
+        elif self.spectra_res == 'low':
+            self.print_message("Reading BT-Settl low resolution spectra...", 3, 32)
+        
         #Generation the SEDs for photosphere, spots and faculae with BTSettl
         self.print_message("Generating synthetic spectra...", 0, 91)
         #print "With", n_wv ,'points'
@@ -631,25 +651,22 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
         #generates the BTSettl interpolated SEDs with LD factors from Kurucz_interpol
 
         #for photosphere
-        if self.spectra_res == 'high':
-            wv, dlnp_ph, flpk_ph, flnp_ph = mstarsim.limb_darkening_to_btsettl(surf_type, nspres, self.wvmin, n_wv, acd)
-            
-        elif self.spectra_res == 'low':
-            wv_, dlnp_ph_, flpk_ph_, flnp_ph_ = mstarsim.limb_darkening_to_btsettl_fast(surf_type, len(interpolated_BTSettl_ph), self.wvmin, self.wvmax, acd)
-            n_wv = 0
-            wv = []
-            dlnp_ph = []
-            flpk_ph = []
-            flnp_ph = []
-            
-            for i in range(len(wv_)):
-                if wv_[i] != 0.0: 
-                    n_wv += 1
-                    wv.append(wv_[i])
-                    dlnp_ph.append(dlnp_ph_[i])
-                    flpk_ph.append(flpk_ph_[i])
-                    flnp_ph.append(flnp_ph_[i])
-    
+ 
+        wv_, dlnp_ph_, flpk_ph_, flnp_ph_ = mstarsim.limb_darkening_to_btsettl_fast(surf_type, len(interpolated_BTSettl_ph), self.wvmin, self.wvmax, acd)
+        n_wv = 0
+        wv = []
+        dlnp_ph = []
+        flpk_ph = []
+        flnp_ph = []
+        
+        for i in range(len(wv_)):
+            if wv_[i] != 0.0: 
+                n_wv += 1
+                wv.append(wv_[i])
+                dlnp_ph.append(dlnp_ph_[i])
+                flpk_ph.append(flpk_ph_[i])
+                flnp_ph.append(flnp_ph_[i])
+      
         self.print_message("Number of points in ranged spectra: " + str(n_wv-1), 0, 91)
         
         data_block = list()
@@ -666,8 +683,7 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
             file_name = path + '/precompiled_spectra/spec_' + str(int(temperature)) + '_' + str(self.Sim.grav) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '_lres.dat.bz2'
     
         elif self.spectra_res == 'high':
-            file_name = path + '/precompiled_spectra/spec_' + str(int(temperature)) + '_' +  \
-                        str(self.Sim.grav) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '.dat.bz2'
+            file_name = path + '/precompiled_spectra/spec_' + str(int(temperature)) + '_' + str(self.Sim.grav) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '_hres.dat.bz2'
         #write this new file to disk
         self.write_file_bz2(file_name, data_block, ' ','')
     
@@ -718,6 +734,7 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
     def init_ccfs(self):
         """read or compute the ccf's for the given temperatures.
         """
+       
         self.print_message('',index=7, color=33)
         #self.print_message('Radial Velocity series calculation...', index=7, color=31)
         #interpolate Phoenix HR spectra with the given temperatures
@@ -814,11 +831,10 @@ class Spectra(StarsimCommon, Starsim_IO, Star):
         self.sys_vel = self.systemic_vel(self.rv_sym, self.ccf_im)
     
         return self.flt_immaculate_ph, self.flxph, self.rv_sym, self.rv_im, self.ccf_im, self.ccf_sym_ph, self.ccf_sym_sp, self.ccf_sym_fc, self.sys_vel
-       
-class Spots(StarsimCommon, Starsim_IO, Star):        
+        
+class Spots(StarsimCommon, Star):        
     """
     """
-   
     def __init__(self, conf_file):
         """init configuration file
         """
@@ -828,14 +844,14 @@ class Spots(StarsimCommon, Starsim_IO, Star):
         self.sigma_spots_lifetime = float(self.conf_file.get('spots','spots_lifetime_sigma'))
         self.colat_limits = [0.0, 180.0]
         self.long_limits = [0.0, 360.0]
-        self.r_limits = [0.0, 8.0]
+        self.r_limits = [0.0, 10.0]
         self.n_spots = 0
                 
     def __conf_init(self, conf_file_path):
         """creates an instance of class ConfigParser, and read the .conf file. Returns the object created
         ConfigParser, and read the .conf file. Returns the object created
         """
-        conf_file_Object = ConfigParser.ConfigParser()
+        conf_file_Object = ConfigParser.ConfigParser( )
         if not conf_file_Object.read([  conf_file_path]):
             print_message( str(conf_file_path) + ": could not be read", 5, 31, inhibit_msg=False)
             sys.exit()
@@ -862,75 +878,7 @@ class Spots(StarsimCommon, Starsim_IO, Star):
             sys.exit()
         
         return self.spot_params
-    
-    def add_spot(self):
-        """add a random spot in the current map
-        """
-        self.spot_map[0].extend( self.gen_rnd_map(num_spots=1) )
-        self.n_spots += 1
-    
-    def map_perturbation(self):
-        """
-        """
-        row = int(random.uniform(0,len(self.spot_map[0])))
-        col = int(random.uniform(0,5))
-        """
-        new_spot = [random.uniform(self.dt1-self.spots_lifetime, self.dt2), 
-                    abs(random.gauss(self.spots_lifetime, self.sigma_spots_lifetime)),
-                    random.uniform(0., 360.), random.uniform(0.0, 180.0),
-                    random.uniform(0.0, 8.0) ]
-        """
-        if col == 0:
-            new_t_ini = random.uniform(self.dt1-self.spots_lifetime, self.dt2)    
-            self.spot_map[0][row][0] = new_t_ini
-            #spots lifetime     
-        elif col == 1: 
-            new_t_life = abs(random.gauss(self.spots_lifetime, self.sigma_spots_lifetime))
-            self.spot_map[0][row][1] = new_t_life
-            #if colatitude is chosen
-        elif col == 2:
-            colat = random.uniform(0., 180.)
-            self.spot_map[0][row][2] = colat
-            #if longitude is chosen
-        elif col == 3:
-            long = random.uniform(0., 360.) 
-            self.spot_map[0][row][3] = long
-            #if radius is chosen
-        elif col == 4:
-            r = random.uniform(0.0, 8.0)
-            self.spot_map[0][row][4] = r
-        
-        while not self.check_params_compatibility(self.spot_map): 
-                if col == 0:
-                    new_t_ini = random.uniform(self.dt1-self.spots_lifetime, self.dt2)    
-                    self.spot_map[0][row][0] = new_t_ini
-                #spots lifetime     
-                elif col == 1: 
-                    new_t_life = abs(random.gauss(self.spots_lifetime, self.sigma_spots_lifetime))
-                    self.spot_map[0][row][1] = new_t_life
-                #if colatitude is chosen
-                elif col == 2:
-                    colat = random.uniform(0., 180.)
-                    self.spot_map[0][row][2] = colat
-                #if longitude is chosen
-                elif col == 3:
-                    long = random.uniform(0., 360.) 
-                    self.spot_map[0][row][3] = long
-                #if radius is chosen
-                elif col == 4:
-                    r = random.uniform(0.0, 8.0)
-                    self.spot_map[0][row][4] = r
-                    
-                """
-                new_spot = [random.uniform(self.dt1-self.spots_lifetime, self.dt2), 
-                            abs(random.gauss(self.spots_lifetime, self.sigma_spots_lifetime)),
-                            random.uniform(0., 360.), 
-                            random.uniform(0.0, 180.0),
-                            random.uniform(0.0, 8.0) ]
-                self.spot_map[0][spot] = new_spot
-                """
-        return self.spot_map[0]
-                                
+                          
     def gen_rnd_map(self, num_spots):
         """returns a random spot map
         """
@@ -942,17 +890,17 @@ class Spots(StarsimCommon, Starsim_IO, Star):
         
         except:
             pass
-         
+       
         data_block = []
         for i in range(int(num_spots)):
-            t_init = random.uniform(self.dt1-2.*self.spots_lifetime, self.dt2)#+self.spots_lifetime)
-            t_life = abs(random.gauss(self.spots_lifetime, self.sigma_spots_lifetime))
+            t_init = np.random.uniform(self.dt1-2.*self.spots_lifetime, self.dt2)#+self.spots_lifetime)
+            t_life = abs(self.sigma_spots_lifetime*np.random.randn() + self.spots_lifetime)
             #generate spot longitude ([0:360] deg)
-            x_long = random.uniform(0., 360.)
+            x_long = np.random.uniform(0.0, 360.0)
             #generate spot colatitude ([20:160] deg)
-            x_colat = random.uniform(0.0, 180.0)
+            x_colat = np.random.uniform(0.0, 180.0)
             #x_colat = random.gauss(90.0, 60.0)
-            spot_radius = random.uniform(0.0, 4.0)  
+            spot_radius = np.random.uniform(0.0, 10.0)  
             #append data to output matrix
             data_block.append([t_init, t_life, x_colat, x_long, spot_radius])
 
@@ -968,42 +916,6 @@ class Spots(StarsimCommon, Starsim_IO, Star):
             return True
         else:
             return False
-
-    def avoid_overlaps(self, spot_params_in):
-        """retruns a slightly modified map with no spot overlaps
-        """  
-        _spot_map_ = spot_params_in[0]
-        _spot_params_ = spot_params_in[1:]  #(evo. rate, diff_rot, n_spots, Q )
-
-        is_ok, sp1, sp2 = mstarsim.check_spot_config_w(_spot_map_, _spot_params_, len(_spot_map_))
-        
-        if not is_ok:
-            counter = 0
-            while(1):
-                counter += 1
-                _spot_map_[sp1-1][2] = float(_spot_map_[sp1-1][2])  \
-                                                   + random.gauss(0.0,5.0)
-                _spot_map_[sp1-1][3] = float(_spot_map_[sp1-1][3])  \
-                                                   + random.gauss(0.0,5.0) 
-                _spot_map_[sp1-1][4] = float(_spot_map_[sp1-1][4])  \
-                                                   - abs(random.gauss(0.0,1.0))
-                                               
-                is_ok, sp1, sp2 = mstarsim.check_spot_config_w(_spot_map_, _spot_params_, len(_spot_map_))
-                
-                if is_ok:
-                    return _spot_map_ + _spot_params_
-                
-                elif counter > 10000:
-                    print "Warning: Error in avoiding overlaps"
-                    return _spot_map_ + _spot_params_
-        else:
-            return _spot_map_ + _spot_params_
-    
-    def density_map(self, colat, lon, sign):
-        """
-        """
-        
-        
     
     def gen_modified_state(self, old_state, random_walk):
         """return a perturbed spot config
@@ -1014,33 +926,34 @@ class Spots(StarsimCommon, Starsim_IO, Star):
         #shuffle spot & parameter to perturbe
         if random_walk:
             #only possible to chanch coordinates & radii
-            row = int(random.uniform(0,len(m_state[0])))
-            col = int(random.uniform(2,5))
+            row = int(np.random.uniform(0,len(m_state[0])))
+            col = int(np.random.uniform(2,5))
         else:
-            row = int(random.uniform(0,len(m_state[0])))
-            col = int(random.uniform(0,5))
+            row = int(np.random.uniform(0,len(m_state[0])))
+            col = int(np.random.uniform(0,5))
 
         #spot init time
         if col == 0:
-            new_t_ini = random.uniform(self.dt1 - 2.*self.spots_lifetime, self.dt2)# , self.dt1+self.spots_lifetime) #update the new value    
+            new_t_ini = np.random.uniform(self.dt1 - 2.*self.spots_lifetime, self.dt2) #update the new value    
             m_state[0][row][0] = new_t_ini
         #spots lifetime     
         elif col == 1: 
-            new_spot_lifetime = abs(random.gauss(self.spots_lifetime, self.sigma_spots_lifetime))
+            #new_spot_lifetime = abs(random.gauss(self.spots_lifetime, self.sigma_spots_lifetime))
+            new_spot_lifetime = abs(self.sigma_spots_lifetime*np.random.randn() + self.spots_lifetime)
             m_state[0][row][1] = new_spot_lifetime
         #if colatitude is chosen
         elif col == 2:
             if random_walk:
-                new_colat = float(old_state[0][row][2]) + random.gauss(0.0, 0.2)   #throw_rnd_gauss(0.0, 1.0, 0.05)
+                new_colat = float(old_state[0][row][2]) + 0.15*np.random.randn()
             else:
-                #new_colat = self.throw_rnd_unif(self.colat_limits[0], self.colat_limits[1], 0.1)
-                new_colat = self.random_sin(180.0)
+                #new_colat = self.random_sin(self.colat_limits[1])
+                new_colat = self.throw_rnd_unif(self.colat_limits[0], self.colat_limits[1], 0.1) 
             #update the new value    
             m_state[0][row][2] = new_colat
         #if longitude is chosen
         elif col == 3:
             if random_walk:
-                new_long = float(old_state[0][row][3]) + random.gauss(0.0, 0.2)    #throw_rnd_gauss(0.0, 1.0, 0.05)
+                new_long = float(old_state[0][row][3]) + 0.3*np.random.randn()
             else:
                 new_long = self.throw_rnd_unif(self.long_limits[0], self.long_limits[1], 0.1)
             #update the new value
@@ -1048,13 +961,14 @@ class Spots(StarsimCommon, Starsim_IO, Star):
         #if radius is chosen
         elif col == 4:
             if random_walk:
-                new_r = float(old_state[0][row][4]) + random.gauss(0.0, 0.02)      #throw_rnd_gauss(0.0, 0.05, 0.001)
+                new_r = float(old_state[0][row][4]) + 0.05*np.random.randn()      #throw_rnd_gauss(0.0, 0.05, 0.001)
             else:
                 #new_r = self.throw_rnd_unif(r_limits[0], r_limits[1], 0.01)
-                new_r = random.uniform(self.r_limits[0], self.r_limits[1])
+                new_r = np.random.uniform(self.r_limits[0], self.r_limits[1])
 
             while not self.in_range(new_r, self.r_limits):
-                new_r = (self.r_limits[1] - self.r_limits[0])/2.0 + random.gauss(0.0, 0.05)  #throw_rnd_gauss(0.0, 0.5, 0.01)
+                new_r = (self.r_limits[1] - self.r_limits[0])/2.0 + 0.05*np.random.randn()  #throw_rnd_gauss(0.0, 0.5, 0.01)
+            
             #update the new value
             m_state[0][row][4] = new_r
             
@@ -1079,7 +993,7 @@ class Spots(StarsimCommon, Starsim_IO, Star):
         """return gaussian distributed number of (mu,sigma) params in steps of 'step'
         e.g: for i in range(5): print throw_rnd_gauss(0.0,1.0,0.1) --> {-2.6, 1.2, -1.0, 0.3, 0.4}
         """
-        nbr = random.gauss(mu, std)
+        nbr = std*np.random.gauss() + mu
         c_nbr = int((1./step)*nbr)
         r = c_nbr*step
         if r == 0.0:
@@ -1090,7 +1004,7 @@ class Spots(StarsimCommon, Starsim_IO, Star):
     def throw_rnd_unif(self, inf, sup, step):
         """return uniform distributed number in range (inf,sup) in steps of 'step'
         """
-        nbr = random.uniform(inf, sup)
+        nbr = np.random.uniform(inf, sup)
         c_nbr = int((1./step)*nbr)
         r = c_nbr*step
 
@@ -1103,7 +1017,7 @@ class Spots(StarsimCommon, Starsim_IO, Star):
             return True
         else:
             return False
-
+ 
 class Planet:
     """packs all information related to the transiting planet
     """
@@ -1130,10 +1044,11 @@ class Planet:
     def __del__(self):
         """class destructor
         """   
-
-class CPhotometry(Starsim_IO, Spectra, Star):
+ 
+class CPhotometry(Spectra):
     """packs all information related to a single photometry band
     """    
+    
     def __init__(self, SimulationEnvironment, conf_file_path='./starsim.conf', inhibit_load_spectra=False):
         
         #init configuration file
@@ -1145,8 +1060,10 @@ class CPhotometry(Starsim_IO, Spectra, Star):
         self.Sim = SimulationEnvironment
         #object id
         self.id = 'Ph_' + str(int(random.uniform(1,2048)))
-        self.mean_normalized_series = -1.0
-        self.normalized_series = []
+        self.mean_series = -1.0
+        self.mean_normalized_series = []
+        self.imm_normalized_series = []
+        self.z = 1.0
         #------------------
         #sim. parameters 
         #------------------
@@ -1188,10 +1105,9 @@ class CPhotometry(Starsim_IO, Spectra, Star):
             #integrate immaculate flux
             self.immaculate_flux = mstarsim.trapezoid_integration(self.wv, self.immaculate_flux_filtered, len(self.wv))
         
-        #photometry "zero point"
-        self.z_ph = 1.0
         #photometric jitter
         self.jitter = 0.0
+        self.raw_flux_series = 0.0
                
     def __del__(self):
         """class destructor
@@ -1201,7 +1117,7 @@ class CPhotometry(Starsim_IO, Spectra, Star):
         """creates an instance of class ConfigParser, and read the .conf file. Returns the object created
         ConfigParser, and read the .conf file. Returns the object created
         """
-        conf_file_Object = ConfigParser.ConfigParser()
+        conf_file_Object = ConfigParser.ConfigParser( )
         if not conf_file_Object.read([  conf_file_path]):
             print_message( str(conf_file_path) + ": could not be read", 5, 31, inhibit_msg=False)
             sys.exit()
@@ -1232,18 +1148,23 @@ class CPhotometry(Starsim_IO, Spectra, Star):
                 test = self.filter_name
             except AttributeError:     
                 self.filter_name = self.conf_file.get('files','filter_path').split('/')[-1]
-            
+                pass
             if self.spectra_res == 'high':
                 file = './data/interpolated_filter_coeffs_' + str(self.filter_name) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '.dat'
             elif self.spectra_res == 'low':
                 file = './data/interpolated_filter_coeffs_' + str(self.filter_name) + '_' + str(int(self.wvmin)) + '_' + str(int(self.wvmax)) + '_lres.dat'
            
             self.interpolated_filter_coeffs = self.read_file(file, ' ')
-            self.print_message('    Reading interpolated filter coefficients...', index=3, color=32)
+            self.print_message('    Reading interpolated filter coefficients...', index=3, color=36)
         
         except IOError:
-            filter_coeffs = self.read_file(self.conf_file.get('files','filter_path'), ' ')
-            print '    Interpolating filter coefficients...'
+            
+            try:
+                filter_coeffs = self.read_file(self.filter_path, ' ')
+            except:    
+                filter_coeffs = self.read_file(self.conf_file.get('files','filter_path'), ' ')
+            
+            print ('    Interpolating filter coefficients...')
             self.interpolated_filter_coeffs = self.filter_interpol(filter_coeffs)
             self.print_message( '    Writing file...' + file, index=3, color=31)
             self.write_file_onecol(file, self.interpolated_filter_coeffs, ' ', '')
@@ -1285,7 +1206,7 @@ class CPhotometry(Starsim_IO, Spectra, Star):
         Simulation: an object containing the info of the simulation and where spotmap is defined)
         write_lc: write lc on disk
         """ 
-        def normalize_time_series(tflux_series, normalization):
+        def normalize_time_series__(tflux_series, normalization):
             """filter convolution and normalization over immaculate photosphere flux
             """
             flux_series = [ [tflux_series[i][0], tflux_series[i][1]/normalization] for i in range(len(tflux_series))]
@@ -1293,12 +1214,26 @@ class CPhotometry(Starsim_IO, Spectra, Star):
             return flux_series
               
         #compute rotating spotted photosphere
-        raw_flux_series, S_index, ff_sp, ff_fc = self.compute_rotating_spotted_photosphere()
+        self.raw_flux_series, self.S_index, self.ff_sp, self.ff_fc, spectra = self.compute_rotating_spotted_photosphere()
         #normalize the series with respect to immaculate flux
-        normalized_series = normalize_time_series(raw_flux_series, self.immaculate_flux)
+        #normalized_series = normalize_time_series(self.raw_flux_series, self.immaculate_flux)
+        
+        #normalize the series with respect to immaculate flux
+        self.imm_normalized_series = normalize_time_series(self.raw_flux_series, self.immaculate_flux)
+        self.imm_normalized_series = np.array(self.imm_normalized_series)
+    
+
+        #mean normalized series
+        self.mean_series = self.imm_normalized_series[:,1].astype(float).mean()
+        #mean of raw (integrated) photosphere
+        #self.raw_series_mean = self.raw_flux_series.mean()
+        
+        self.mean_normalized_series = np.array(self.raw_flux_series)
+        self.mean_normalized_series[:,1] /= self.raw_flux_series[:,1].astype(float).mean()
         
         #return only y-values
-        return np.array(normalized_series)[:,1] 
+        return self.mean_normalized_series[:,1] 
+        #return self.imm_normalized_series[:,1]
     
     def compute_lc_series(self, write_lc=False, mark=None):
         """
@@ -1306,7 +1241,7 @@ class CPhotometry(Starsim_IO, Spectra, Star):
         Simulation: an object containing the info of the simulation and where spotmap is defined)
         write_lc: write lc on disk
         """ 
-        def normalize_time_series(tflux_series, normalization):
+        def normalize_time_series__(tflux_series, normalization):
             """filter convolution and normalization over immaculate photosphere flux
             """
             flux_series = [ [tflux_series[i][0], tflux_series[i][1]/normalization] for i in range(len(tflux_series))]
@@ -1315,19 +1250,26 @@ class CPhotometry(Starsim_IO, Spectra, Star):
               
         #compute rotating spotted photosphere
         if not Glob.planet:
-            raw_flux_series, S_index, ff_sp, ff_fc = self.compute_rotating_spotted_photosphere()
+            self.raw_flux_series, self.S_index, self.ff_sp, self.ff_fc, spectra = self.compute_rotating_spotted_photosphere()
+    
         else:
-            raw_flux_series = self.compute_rotating_spotted_photosphere()
+            self.raw_flux_series, spectra = self.compute_rotating_spotted_photosphere()
         
         #normalize the series with respect to immaculate flux
-        self.normalized_series = normalize_time_series(raw_flux_series, self.immaculate_flux)
+        self.imm_normalized_series = normalize_time_series(self.raw_flux_series, self.immaculate_flux)
         #mean of ph series
-        normalized_series_ = np.array(self.normalized_series)
-        self.mean_normalized_series = normalized_series_[:,1].astype(float).mean()
+        self.imm_normalized_series = np.array(self.imm_normalized_series)
+        #mean normalized series
+        self.mean_series = self.imm_normalized_series[:,1].astype(float).mean()
         
+        #lc normalization w.r.t mean of the series, not w.r.t. immaculate photosphere
+        self.mean_normalized_series = self.raw_flux_series
+        self.mean_normalized_series[:,1] /= self.raw_flux_series[:,1].astype(float).mean()
+    
         if self.obs_data != []:
             logL_lc = self.model_logL()
-              
+            self.z = 1.0/self.imm_normalized_series[:,1].astype(float).mean()
+            
         else:
             logL_lc = 'not defined'
        
@@ -1341,20 +1283,25 @@ class CPhotometry(Starsim_IO, Spectra, Star):
             if self.obs_data != []:
                 lc_model_residuals = []
                 for i in range(len(self.obs_time)):
-                    lc_model_residuals.append( [ self.obs_time[i], self.normalized_series[i][1], self.obs_data[i][2], self.normalized_series[i][1] - self.obs_data[i][1] ] ) 
+                    lc_model_residuals.append( [ self.obs_time[i], self.imm_normalized_series[i][1], self.obs_data[i][2], self.imm_normalized_series[i][1] - self.obs_data[i][1] ] ) 
                 
                 
                 self.write_file('./output/lc_series_' + str(mark) + str(self.Sim.id) + '_' + str(self.wvmin) + '_' + str(self.wvmax) + '_' + str(self.filter_name) 
-                                + '.dat', lc_model_residuals, ' ', '')
-            
+                               , lc_model_residuals, ' ', '')
+                
+                self.write_file('./output/lc_mean_' + str(mark) + str(self.Sim.id) + '_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + str(self.filter_name) 
+                                , self.mean_normalized_series, ' ', '')
+                
             else:
                 
                 self.write_file('./output/lc_series_' + str(mark) + str(self.Sim.id) + '_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + str(self.filter_name) 
-                                + '.dat', self.normalized_series, ' ', '')
+                                , self.imm_normalized_series, ' ', '')
             
-            
+                self.write_file('./output/lc_mean_' + str(mark) + str(self.Sim.id) + '_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + str(self.filter_name) 
+                                , self.mean_normalized_series, ' ', '')
+                
             self.print_message( str(4*' ') + './output/lc_series_' + str(mark) + str(self.Sim.id) + '_' + str(self.wvmin) + '_' + str(self.wvmax) + 
-                                '_' + str(self.filter_name) + '.dat' + " created", 2, 31)        
+                                '_' + str(self.filter_name) + " created", 2, 31)        
        
             #S-index
             """
@@ -1366,16 +1313,16 @@ class CPhotometry(Starsim_IO, Spectra, Star):
             #Filling factors
             if not Glob.planet:
                 try:
-                    self.write_file('./output/spot_ff_' + str(self.wvmin) +'_' + str(self.wvmax) + '.dat', 
-                                ff_sp, ' ', '')
-                    self.write_file('./output/faculae_ff_' + str(self.wvmin) +'_' + str(self.wvmax) + '.dat', 
-                                ff_fc, ' ', '')
+                    self.write_file('./output/spot_ff_' + str(self.Sim.id) + '_' + str(self.wvmin) +'_' + str(self.wvmax) + '.dat', 
+                                self.ff_sp, ' ', '')
+                    self.write_file('./output/faculae_ff_' + str(self.Sim.id) + '_' + str(self.wvmin) +'_' + str(self.wvmax) + '.dat', 
+                                self.ff_fc, ' ', '')
                 except:
-                    print "Error writing filling factor curves"
+                    print ("Error writing filling factor curves")
                     pass
             
             
-        return logL_lc
+        return logL_lc, spectra
 
     def compute_rotating_spotted_photosphere(self):
         """input: Band 
@@ -1392,29 +1339,53 @@ class CPhotometry(Starsim_IO, Spectra, Star):
             planet_params = [self.Sim.T0_planet, self.Sim.P_planet, self.Sim.A_planet, self.Sim.spin_orbit, self.Sim.bim, self.Sim.R_planet]
             star_params = star_params + planet_params
             
-            flt_bolometric_arr = mstarsim.compute_rotating_spotted_photosphere_planet(self.obs_time, len(self.obs_time), \
-                                                                                    self.ang_res, star_params, self.Sim.spot_map[0], \
-                                                                                    self.Sim.spot_map[1:], self.cth_coeffs, self.interpolated_filter_coeffs, \
-                                                                                    self.wv, self.dlnp_ph, self.flpk_ph, self.flnp_ph, \
-                                                                                    self.dlnp_sp, self.dlnp_fc, self.flpk_sp, self.flnp_sp, \
+            flt_bolometric_arr, spectra = mstarsim.compute_rotating_spotted_photosphere_planet(self.obs_time, len(self.obs_time),
+                                                                                    self.ang_res, star_params, self.Sim.spot_map[0],
+                                                                                    self.Sim.spot_map[1:], self.cth_coeffs, self.interpolated_filter_coeffs,
+                                                                                    self.wv, self.dlnp_ph, self.flpk_ph, self.flnp_ph,
+                                                                                    self.dlnp_sp, self.dlnp_fc, self.flpk_sp, self.flnp_sp,
                                                                                     self.flnp_fc, self.flt_immaculate_ph, len(self.wv), len(self.Sim.spot_map[0]))
-            return flt_bolometric_arr
+            
+            if Glob.save_spectra:
+             
+                #save low res spectra
+                for i in range(len(spectra)):
+                    spec = []
+                    for j in range(len(self.wv)):
+                        spec.append([self.wv[j], spectra[i][j+1]])
+                
+                    self.write_file('./integrated_spectra/spec_planet_' + str(spectra[i][0]) + '.dat', spec, ' ', '')
+            
+            
+            return flt_bolometric_arr, spectra
         
         else:
-     
+           
             self.Sim.w = 2.0*pi/self.Sim.P_rot
             star_params = [self.Sim.x_i, self.Sim.R_star, self.Sim.w, self.Sim.B_coeff, self.Sim.C_coeff, 
                            self.Sim.temp_ph, self.Sim.delta_t_sp, self.Sim.delta_t_fc]
-        
-            flt_bolometric_arr, S_index, ff_sp, ff_fc = mstarsim.compute_rotating_spotted_photosphere(self.obs_time, len(self.obs_time), 
+       
+     
+            flt_bolometric_arr, S_index, ff_sp, ff_fc, spectra  = mstarsim.compute_rotating_spotted_photosphere(self.obs_time, len(self.obs_time), 
                                                                             star_params, self.Sim.spot_map[0], 
                                                                             self.Sim.spot_map[1:], self.cth_coeffs,  
                                                                             self.interpolated_filter_coeffs, 
                                                                             self.wv, self.dlnp_ph, self.flpk_ph, self.flnp_ph, 
                                                                             self.dlnp_sp, self.flpk_sp, self.flnp_sp, 
                                                                             self.flnp_fc, self.flt_immaculate_ph, self.S_index_im, len(self.wv), len(self.Sim.spot_map[0]))
-        
-            return flt_bolometric_arr, S_index, ff_sp, ff_fc
+         
+            if Glob.save_spectra:
+             
+                #save low res spectra
+                for i in range(len(spectra)):
+                    spec = []
+                    for j in range(len(self.wv)):
+                        spec.append([self.wv[j], spectra[i][j+1]])
+                    
+                    self.write_file('./integrated_spectra/spec_activity_' + str(spectra[i][0]) + '.dat', spec, ' ', '')
+               
+            
+            return flt_bolometric_arr, S_index, ff_sp, ff_fc, spectra
 
     def set_wv_range(self, wvmin, wvmax):
         """setter for changing the wvmin,wvmax and read the new spectras, immac. photosphere and filter 
@@ -1470,11 +1441,11 @@ class CPhotometry(Starsim_IO, Spectra, Star):
         self.obs_data[:,2] = np.sqrt(self.err**2 + self.jitter**2)
     
         self.write_file('./output/lc_data_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + str(self.filter_name) + 
-                        '_' + str(self.z_ph) + '_' + str(self.jitter), self.obs_data, ' ', '')
+                        '_' + str(self.z_ph) + '_' + str(self.jitter) + '_' + self.info.split('/')[-1], self.obs_data, ' ', '')
         self.print_message( str(4*' ') + "./output/lc_data_" + str(self.wvmin) +'_' + str(self.wvmax) + '_' + 
-                            str(self.filter_name) + '_' + str(self.z_ph) + '_' + str(self.jitter) + " created", 2, 31) 
-    
-class CRadialVelocity(StarsimCommon, Starsim_IO, Spectra, Star):
+                            str(self.filter_name) + '_' + str(self.z_ph) + '_' + str(self.jitter) + '_' + self.info.split('/')[-1] + " created", 2, 31) 
+  
+class CRadialVelocity(Spectra):
     """
     """
     def __init__(self, SimulationEnvironment, conf_file_path='./starsim.conf', 
@@ -1532,7 +1503,7 @@ class CRadialVelocity(StarsimCommon, Starsim_IO, Spectra, Star):
             self.init_ccfs()
                  
         #init point of CCF fitting (A, center, sigma, offset)
-        self.init_p = (30.0,-0.5,1.0,-5.0)
+        self.init_p = (30.0, -0.5, 1.0, -5.0)
         #RV jitter
         self.jitter = 0.0
         
@@ -1544,7 +1515,7 @@ class CRadialVelocity(StarsimCommon, Starsim_IO, Spectra, Star):
         """creates an instance of class ConfigParser, and read the .conf file. Returns the object created
         ConfigParser, and read the .conf file. Returns the object created
         """
-        conf_file_Object = ConfigParser.ConfigParser()
+        conf_file_Object = ConfigParser.ConfigParser( )
         if not conf_file_Object.read([  conf_file_path]):
             print_message( str(conf_file_path) + ": could not be read", 5, 31, inhibit_msg=False)
             sys.exit()
@@ -1641,7 +1612,11 @@ class CRadialVelocity(StarsimCommon, Starsim_IO, Spectra, Star):
         def compute_logL_null(jitter_null):
             """
             """
-            inv_sigma2_null = 1.0/(self.err_0**2 + jitter_null**2)
+            #inv_sigma2_null = 1.0/(self.err_0**2 + jitter_null**2)
+            #renormalize the error column
+            errs = self.err_0 / max(self.err_0)
+            inv_sigma2_null = 1.0/(errs*self.jitter**2)
+            
             logL_null = -0.5*(np.sum(((self.y_data_0 - np.mean(self.y_data_0))**2)*inv_sigma2_null + np.log(2.*np.pi) - np.log(inv_sigma2_null))) 
          
             return -logL_null 
@@ -1659,7 +1634,7 @@ class CRadialVelocity(StarsimCommon, Starsim_IO, Spectra, Star):
         """
         #RV model (only y values)
         y_rv_model = self.compute_rv_model()[:,1].astype(float)
-        #renormalize the error column
+        #renormalize the errors
         errs = self.err / max(self.err)
         inv_sigma2 = 1.0/(errs*self.jitter**2)
         #inv_sigma2 = 1.0/(self.err**2 + self.jitter**2)
@@ -1730,7 +1705,7 @@ class CRadialVelocity(StarsimCommon, Starsim_IO, Spectra, Star):
                 self.init_p = coeff  #reset the initial guess with the last fit output
             
             except RuntimeError:
-                print "Error in fitting CCF"
+                print ("Error in fitting CCF")
                 raise
      
         return time_array, np.array(coeffs_array)
@@ -1811,9 +1786,8 @@ class CRadialVelocity(StarsimCommon, Starsim_IO, Spectra, Star):
                     ccf.append( [ self.rv_sym[j], ccf_rotating[i][j] ] )
                 self.write_file('./ccfs/' + str(self.obs_time[i]) + '.dat', ccf, ' ', '')    
             
- 
         time_, gaussian_fit_coeffs = self.fit_ccf(self.obs_time, self.rv_sym, ccf_rotating)
-        
+
         #fit a gaussian and get its center (rv)
         rv_series = gaussian_fit_coeffs[:,1].astype(float)
         
@@ -1850,14 +1824,18 @@ class CRadialVelocity(StarsimCommon, Starsim_IO, Spectra, Star):
         """write the lc data curve with z_ph offset and jitter
         """
         self.obs_data, self.err = np.array(self.obs_data), np.array(self.err)
-        self.obs_data[:,2] = np.sqrt(self.err**2 + self.jitter**2)
-    
-        self.write_file('./output/RV_data_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + 
+        
+        #self.obs_data[:,2] = np.sqrt(self.err**2 + self.jitter**2)
+        #renormalize the error column
+        errs = self.err / max(self.err)
+        inv_sigma2 = 1.0/(errs*self.jitter**2)
+        self.obs_data[:,2] = np.sqrt(1./inv_sigma2)
+        self.write_file('./output/RV_data_' + str(self.name) + '_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + 
                         str(self.jitter) + '.dat', self.obs_data , ' ', '')
-        self.print_message( str(4*' ') + "./output/RV_data_" + str(self.wvmin) + '_' + 
+        self.print_message( str(4*' ') + "./output/RV_data_" + str(self.name) + '_' + str(self.wvmin) + '_' + 
                             str(self.wvmax) + '_' + str(self.jitter) + '.dat' + " created", 2, 31) 
-       
-class CFWHM(StarsimCommon, Starsim_IO, Spectra, Star):
+     
+class CFWHM(Spectra):
     """
     """
     def __init__(self, SimulationEnvironment, conf_file_path='./starsim.conf'):
@@ -2140,7 +2118,7 @@ class CFWHM(StarsimCommon, Starsim_IO, Spectra, Star):
                 
         return normalized_khi2_fwhm
 
-class CCONTRAST(StarsimCommon, Starsim_IO, Spectra, Star):
+class CCONTRAST(Spectra):
     """
     """
     def __init__(self, SimulationEnvironment, conf_file_path='./starsim.conf'):
@@ -2391,7 +2369,7 @@ class CCONTRAST(StarsimCommon, Starsim_IO, Spectra, Star):
         #normalize and save the FWHM curve and center the series with respect to its mean 
         ccf_indices = np.array(ccf_indices)
         mean_CON = ccf_indices[:,2].astype(float).mean()
-        print "mean CONT:", mean_CON
+        print ("mean CONT:", mean_CON)
         normalized_CON_series = []
         for i in range(len(time_)): normalized_CON_series.append([time_[i], ccf_indices[i][2] - mean_CON])
  
@@ -2425,13 +2403,14 @@ class CCONTRAST(StarsimCommon, Starsim_IO, Spectra, Star):
                 
         return normalized_khi2_contrast
 
-class CBIS(StarsimCommon, Starsim_IO, Spectra, Star):
+class CBIS(Spectra):
     """
     """
-    def __init__(self, SimulationEnvironment, conf_file_path='./starsim.conf'):
+    def __init__(self, SimulationEnvironment, conf_file_path='./starsim.conf', inhibit_load_spectra=False):
         
         #init configuration file
         self.conf_file_path = conf_file_path
+        self.inhibit_load_spectra = inhibit_load_spectra
         self.conf_file = self.__conf_init(conf_file_path)
         #class composition (to access the attributes of StarsimSimulation objects)
         self.Sim = SimulationEnvironment
@@ -2462,6 +2441,8 @@ class CBIS(StarsimCommon, Starsim_IO, Spectra, Star):
         self.spectra_res = str(self.conf_file.get('general','spectra_resolution'))
         #type of data (ph/rv/...)
         self.data_type = ''
+        #mask
+        self.mask = str(self.conf_file.get('rv','spectral_mask'))
         #-------------------------------------------------------------------------
         #INIT ROUTINES
         #-------------------------------------------------------------------------
@@ -2531,7 +2512,11 @@ class CBIS(StarsimCommon, Starsim_IO, Spectra, Star):
         def compute_logL_null(jitter_null):
             """
             """
-            inv_sigma2_null = 1.0/(self.err_0**2 + jitter_null**2)
+            #inv_sigma2_null = 1.0/(self.err_0**2 + jitter_null**2)
+            #renormalize the error column
+            errs = self.err_0 / max(self.err_0)
+            inv_sigma2_null = 1.0/(errs*self.jitter**2)
+            
             logL_null = -0.5*(np.sum(((self.y_data_0 - np.mean(self.y_data_0))**2)*inv_sigma2_null + np.log(2.*np.pi) - np.log(inv_sigma2_null))) 
          
             return -logL_null 
@@ -2547,9 +2532,13 @@ class CBIS(StarsimCommon, Starsim_IO, Spectra, Star):
     def model_logL(self):
         """compute likelihood of model-data
         """
-        inv_sigma2 = 1.0/(self.err**2 + self.jitter**2)
-        #inv_sigma2 = 1.0/(self.jitter**2)
-        self.logL = -0.5*(np.sum(((self.compute_BIS_model() - self.y_data)**2)*inv_sigma2 + np.log(2.*np.pi) - np.log(inv_sigma2))) 
+        #RV model (only y values)
+        y_bis_model = self.compute_BIS_model()[:,1].astype(float)
+        #renormalize the error column
+        errs = self.err / max(self.err)
+        inv_sigma2 = 1.0/(errs*self.jitter**2)
+        
+        self.logL = -0.5*(np.sum(((y_bis_model - self.y_data)**2)*inv_sigma2 + np.log(2.*np.pi) - np.log(inv_sigma2))) 
                     
         return self.logL
 
@@ -2666,9 +2655,12 @@ class CBIS(StarsimCommon, Starsim_IO, Spectra, Star):
         
         return time_array, indices_array
     
-    def compute_BIS_series(self, write_rv=True):
+    def compute_BIS_model(self):
         """
-        """        
+        Compute the BIS curve given a Simulation.spotmap 
+        Simulation: an object containing the info of the simulation and where spotmap is defined)
+        write_rv: write lc on disk
+        """ 
         self.Sim.w = 2.0*pi/self.Sim.P_rot
         star_params = [self.Sim.x_i, self.Sim.R_star, self.Sim.w, self.Sim.B_coeff, self.Sim.C_coeff, 
                        self.Sim.temp_ph, self.Sim.delta_t_sp, self.Sim.delta_t_fc]
@@ -2677,7 +2669,7 @@ class CBIS(StarsimCommon, Starsim_IO, Spectra, Star):
         star_params = star_params + planet_params
         
         spot_map = self.Sim.spot_map[:]
-        spot_params_, spot_map, n_spots = spot_map[1:], spot_map[0], spot_map[3]
+        spot_params_, spot_map, n_spots = spot_map[1:], spot_map[0], self.Sim.n_spots #spot_map[3]
         
         #self.print_message('Computing CCF spotted rotating photosphere', index=6, color=34)
         #rotating spotted photosphere ccf 
@@ -2687,55 +2679,87 @@ class CBIS(StarsimCommon, Starsim_IO, Spectra, Star):
                                                                   self.flnp_fc, self.rv_sym, self.ccf_sym_ph, self.ccf_sym_sp, self.ccf_sym_fc, 
                                                                   self.ccf_im, self.flxph, len(self.obs_time), len(self.rv_sym), len(self.flnp_ph), n_spots) 
         
-        """
-        #fit a gaussian and get its center (rv)
-        time_, rv_series = self.fit_ccf(self.obs_time, self.rv_sym, ccf_rotating)
-        """
+        if Glob.save_ccfs: 
+            #save ccf series
+            for i in range(len(ccf_rotating)):
+                ccf = []
+                for j in range(len(ccf_rotating[i])):
+                    ccf.append( [ self.rv_sym[j], ccf_rotating[i][j] ] )
+                self.write_file('./ccfs/' + str(self.obs_time[i]) + '.dat', ccf, ' ', '')    
+            
+ 
+        time_, gaussian_fit_coeffs = self.fit_ccf(self.obs_time, self.rv_sym, ccf_rotating)
         
         #compute CCF indices
         time_, ccf_indices = self.ccf_indices(self.obs_time, self.rv_sym, ccf_rotating)
-        
-        
         #normalize and save the BIS curve and center the series with respect to its mean 
         ccf_indices = np.array(ccf_indices)
         mean_BIS = ccf_indices[:,3].astype(float).mean()
-        normalized_BIS_series = []
-        for i in range(len(time_)): normalized_BIS_series.append([time_[i], ccf_indices[i][3] - mean_BIS])
         
-        """
-        #center the data with respect to its mean
-        self.obs_data = np.array(self.obs_data)
-        for i in range(len(self.obs_data)): self.obs_data[i][1] -= self.obs_data[:,1].astype(float).mean()
-        """
+        self.normalized_BIS_series = []
+        for i in range(len(time_)): self.normalized_BIS_series.append([time_[i], ccf_indices[i][3] - mean_BIS])
         
-        #compute khi2, if observational data is provided
+        #only y-values
+        self.y_rv_model = np.array(self.normalized_BIS_series)[:,1]
+        
+        return np.array(self.normalized_BIS_series)
+    
+    def compute_BIS_series(self, write_rv=True):
+        """
+        """        
+        self.normalized_bis_series = self.compute_BIS_model()
+      
+        #compute logL, if observational data is provided
         if self.obs_data != []:
-            normalized_khi2_bis = mstarsim.khi2(normalized_BIS_series, self.obs_data, len(normalized_BIS_series)) / self.khi2_immaculate_bis     
+            logL_bis = self.model_logL()
         else:
-            normalized_khi2_bis = 'not defined'
+            logL_bis = 'not defined'
         
         if write_rv:
-            #write RV series on disk
-            self.write_file('./output/BIS_P=' + str(self.Sim.P_rot) + '_' + str(self.Sim.id) + '_Tph=' + str(int(self.Sim.temp_ph)) + '_dTsp=' + str(int(self.Sim.delta_t_sp)) + 
-                            '_Q=' + str(self.Sim.Q) + '_diff=' + str(self.Sim.diff_rotation) + '.dat', normalized_BIS_series, ' ', '')
-            
-            self.print_message( str(4*' ') + 'File ./output/BIS_P=' + str(self.Sim.P_rot) + '_Tph=' + str(int(self.Sim.temp_ph)) + '_dTsp=' + str(int(self.Sim.delta_t_sp)) + 
-                            '_Q=' + str(self.Sim.Q) + '_diff=' + str(self.Sim.diff_rotation) + '.dat' + " created", 2, 31)            
-      
-            #compute the residuals
+            mark = ''    
             if self.obs_data != []:
-                rv_residuals = []
+                #if observational data exists, compute residuals as well 
+                rv_series = [ ['# time, bis(model), residuals(data-model), bis_err(data)'] ]
                 for i in range(len(self.obs_time)):
-                    rv_residuals.append([self.obs_time[i], normalized_BIS_series[i][1] - self.obs_data[i][1], self.obs_data[i][2] ])
-                self.write_file('./output/BIS_P=' + str(self.Sim.P_rot) + '_Tph=' + str(int(self.Sim.temp_ph)) + '_dTsp=' + str(int(self.Sim.delta_t_sp)) + 
-                                '_Q=' + str(self.Sim.Q) + '_diff=' + str(self.Sim.diff_rotation) + '.residuals', rv_residuals, ' ', '')
+                    rv_series.append( [ self.obs_time[i], self.normalized_bis_series[i][1], 
+                                                    self.normalized_bis_series[i][1] - self.obs_data[i][1], self.obs_data[i][2] ] ) 
                 
-        return normalized_khi2_bis
-                            
+                self.write_file('./output/bis_series_' + str(mark) + str(self.Sim.id) + '_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + 
+                                str(self.mask) + '.dat', rv_series, ' ', '')
+            
+            else:
+                
+                self.write_file('./output/bis_series_' + str(mark) + str(self.Sim.id) + '_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + 
+                                str(self.mask) + '.dat', self.normalized_bis_series, ' ', '')
+            
+            
+            self.print_message( str(4*' ') + './output/bis_series_' + str(mark) + str(self.Sim.id) + '_' + 
+                                str(self.wvmin) + '_' + str(self.wvmax) + '_' + str(self.mask) + '.dat' + " created", 2, 31)        
+            
+                    
+        return logL_bis
+    
+    def write_bis_data(self):
+        """write the bis data curve with jitter
+        """
+        self.obs_data, self.err = np.array(self.obs_data), np.array(self.err)
+        #self.obs_data[:,2] = np.sqrt(self.err**2 + self.jitter**2)
+        #renormalize the error column
+        errs = self.err / max(self.err)
+        inv_sigma2 = 1.0/(errs*self.jitter**2)
+    
+        self.obs_data[:,2] = np.sqrt(1./inv_sigma2)
+        
+        self.write_file('./output/BIS_data_' + str(self.wvmin) +'_' + str(self.wvmax) + '_' + 
+                        str(self.jitter) + '.dat', self.obs_data , ' ', '')
+        self.print_message( str(4*' ') + "./output/BIS_data_" + str(self.wvmin) + '_' + 
+                            str(self.wvmax) + '_' + str(self.jitter) + '.dat' + " created", 2, 31)
+   
 class SimulatedAnnealing:
     """environment for optimization 
     """
     def __init__(self, conf_file_path='./starsim.conf'):
+        
         #init configuration file
         self.conf_file_path = conf_file_path
         self.conf_file = self.__conf_init(conf_file_path)
@@ -2748,9 +2772,12 @@ class SimulatedAnnealing:
         self.T0 = float(self.conf_file.get('MCSA','MC_T0'))
         #---------------------------------------------------------------------- 
         self.RV_WEIGHT = 4.0
+        self.BIS_WEIGHT = 4.0
+        self.CRX_WEIGHT = 1.0
         self.InvertedSpotMap = []
         self.s_jstat = np.inf
-        #self.jitter = 0.0000
+        self.jitter = 0.0
+        
         
               
     def __del__(self):
@@ -2767,7 +2794,7 @@ class SimulatedAnnealing:
             sys.exit()
         else:
             return conf_file_Object
-        
+    
     def kirkpatrick_cooling(self, T, alpha):
         while True:
             yield T
@@ -2785,16 +2812,23 @@ class SimulatedAnnealing:
                       
                 elif object.data_type == 'rv':
                     joint_logL += self.RV_WEIGHT*object.model_logL() 
+                
+                elif object.data_type == 'bis':
+                    joint_logL += self.BIS_WEIGHT*object.model_logL()
+                    
+                elif object.data_type == 'crx':
+                    joint_logL += self.CRX_WEIGHT*object.model_logL()
                     
         except ValueError:    
             raise
-             
+        
+
         return -joint_logL 
         
     def compute_metropolis(self, DataObjects):
         """
         """
-        #self.old_jitter = self.jitter
+        self.old_jitter = self.jitter
         if self.rnd_walk:
             self.MAX_ITERATIONS = 10*self.MAX_ITERATIONS
          
@@ -2803,11 +2837,9 @@ class SimulatedAnnealing:
             s_state = self.spot_map
             p_state = s_state
             #perturb the state
-            #if random.uniform(0,1) < 0.65:
+         
             p_state = self.gen_modified_state(s_state, self.rnd_walk)
-            #else: 
-            #    self.old_jitter = self.jitter
-            #    self.jitter = random.uniform(0.0,0.01)    
+                
             alarm = 0
             #check if this perturbation overlaps a pair of spots. If so,repeat generation
             while 1:
@@ -2845,22 +2877,26 @@ class SimulatedAnnealing:
                     sys.stdout.flush()
                 
             #otherwise do a random decision
-            elif random.uniform(0,1) < exp(-self.beta*delta_jstat):
+            elif np.random.uniform(0,1) < np.exp(-self.beta*delta_jstat):
                 #print "Entered with T=", 1.0/self.beta
                 self.s_jstat = self.p_jstat
      
             else:
                 #recover old spot configuration --> no change in spotmap
                 self.spot_map = s_state[:]
-                #self.jitter = self.old_jitter
-                
+                #for object in DataObjects: object.jitter = self.old_jitter
+            self.l_logLs.append([self.it, -self.s_jstat])    
             iteration += 1
-        
+            self.it += 1
+            
         return self.spot_map    
-       
+    
     def simulated_annealing(self, DataObjects):
         """
         """
+        self.SA_id = int(random.uniform(0,1e6))
+        self.l_logLs = []
+        self.it = 0
         #os.system("clear")
         self.init_temp = 0
         self.temp_steps = 25
@@ -2871,12 +2907,12 @@ class SimulatedAnnealing:
         self.dt1 = min([min(object.obs_time) for object in DataObjects])  
         self.dt2 = max([max(object.obs_time) for object in DataObjects])  
         
-        for i in range(self.init_temp): self.beta = 1.0/temperatures.next()
+        for i in range(self.init_temp): self.beta = 1.0/next(temperatures)
         #init temperature sweep
         for self.p_temp in range(self.init_temp, self.temp_steps):
             
             self.MAX_ITERATIONS = int(self.MC_iterations) #*sqrt(self.p_temp+1))
-            self.beta = 1.0/temperatures.next()
+            self.beta = 1.0/next(temperatures)
             #print "Temp. step:", p_temp, "Beta:", self.beta, "Iterations:", self.MAX_ITERATIONS              
             if self.p_temp == self.temp_steps - 1:
                 self.is_last_beta = True
@@ -2895,12 +2931,59 @@ class SimulatedAnnealing:
             
         self.InvertedSpotMap = state_out[0]
         
+        #self.write_file('logLs.dat', self.l_logLs, ' ', '')
+        
+        return -self.Ejoint_statistic, self.SA_id, self.info, self.RV_WEIGHT 
+
+    def simulated_annealing_local(self, DataObjects):
+        """
+        """
+        self.l_logLs = []
+        self.it = 0
+        #os.system("clear")
+        self.temp_steps = 25
+        self.init_temp = self.temp_steps - 10 
+        
+        #set a temperature cooling schedule. (initial T, alpha)
+        temperatures = self.kirkpatrick_cooling(self.T0, self.alpha)
+        #find init time and final time of simulation (dt1 and dt2)
+        #take the widest range possible
+        self.dt1 = min([min(object.obs_time) for object in DataObjects])  
+        self.dt2 = max([max(object.obs_time) for object in DataObjects])  
+        
+        for i in range(self.init_temp): self.beta = 1.0/next(temperatures)
+        #init temperature sweep
+        for self.p_temp in range(self.init_temp, self.temp_steps):
+            
+            self.MAX_ITERATIONS = int(self.MC_iterations) #*sqrt(self.p_temp+1))
+            self.beta = 1.0/next(temperatures)
+            #print "Temp. step:", p_temp, "Beta:", self.beta, "Iterations:", self.MAX_ITERATIONS              
+            if self.p_temp == self.temp_steps - 1:
+                self.is_last_beta = True
+                self.rnd_walk = True
+            else:
+                self.rnd_walk = False
+                self.is_last_beta = False
+            
+            state_out = self.compute_metropolis(DataObjects)
+            
+        self.Ejoint_statistic = self.compute_joint_statistic(DataObjects)
+                
+        if not Glob.inhibit_msg:
+            self.write_file(str(DataObjects[0].conf_file.get('files','output_path')) + 
+                            '/spot_map_' + str(self.id) + '.dat', state_out[0], ' ', '')
+            
+        self.InvertedSpotMap = state_out[0]
+        
+        #self.write_file('logLs.dat', self.l_logLs, ' ', '')
+        
         return -self.Ejoint_statistic, self.id, self.info, self.RV_WEIGHT 
                
-class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
+class StarsimSimulation(Spots, Planet, SimulatedAnnealing):
     """packs all information related to simulation config
     """
     def __init__(self, conf_file_path='./starsim.conf'):
+        
         #init configuration file
         self.conf_file_path = conf_file_path
         self.conf_file = self.__conf_init(conf_file_path)
@@ -2917,9 +3000,9 @@ class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
         self.spectra_res = str(self.conf_file.get('general','spectra_resolution'))
         #init spotmap
         self.init_spotmap()
-        self.dt1 = float(self.conf_file.get('general','init_time_sim'))
-        self.dt2 = float(self.conf_file.get('general','final_time_sim'))
-        self.t_exp = float(self.conf_file.get('general','time_cadence'))
+        self.dt1 = float(self.conf_file.get('general', 'init_time_sim'))
+        self.dt2 = float(self.conf_file.get('general', 'final_time_sim'))
+        self.t_exp = float(self.conf_file.get('general', 'time_cadence'))
         self.n_spots = int(self.spot_map[3])
         self.IterCounter = 0
     
@@ -2932,26 +3015,6 @@ class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
         """  
         self.spot_map = self.read_spot_params(spot_list_file='./data/spot_list.dat')
         
-    def print_start_info(self):
-        """
-        """
-        self.print_message('', 7,94)
-        self.print_message('                     STARSIM 2.0                       ', 7, 90)
-        #self.print_message('                                                       ', 7, 94)
-        self.print_message('     SIMULATION OF STELLAR PHOTOMETRIC/RV TIME SERIES  ', 7, 94)                                     
-        #self.print_message('                                                       ', 7, 94)
-        self.print_message('                                                       ', 7, 90)
-        self.print_message('', 7,90)
-        self.print_message("Read configuration file " + str(self.conf_file_path), index=2, color=31)
-        #self.print_message( 'Filter TF data file: ' + str(conf_file.get('files','filter_path')), 3, 37)
-        #self.print_message( '', 7,37)
-        #self.print_message( 'Number of pixels on the star: ' + str(n1), 3, 37)
-        #self.print_message( 'Size of the pixel: ' + str(da1) + 'deg', 3, 37)
-        #self.print_message( 'Radius of the star: ' + str(star.R_star) + 'Rsun', 3, 37)
-        if Glob.ncpus != 0:
-            self.print_message( 'Detected CPUs / using CPUs: ' + str(mp.cpu_count()) + "/" + str(Glob.ncpus), 5, 95)
-            self.print_message('', 5,95)
-            self.print_message('INIT. STARSIM...', 6,90)
     
     def __conf_init(self, conf_file_path):
         """creates an instance of class ConfigParser, and read the .conf file. Returns the object created
@@ -2969,8 +3032,10 @@ class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
         """
 
         self.delta_t_sp, self.delta_t_fc = delta_t_sp, delta_t_fc
+        
         if Observables == None:
             Observables = self.Observables
+            
         if type(Observables) is list:
             for ObservableObject in Observables:
                 ObservableObject.set_delta_t() 
@@ -3008,13 +3073,18 @@ class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
         try:
             mfit_data = self.read_file(multifit_file_path, ' ')
         except IOError:
-            print "Multifit .conf file could not be read!"
+            print ("Multifit .conf file could not be read!")
+        
         #read the multifit configuration file
         for j in range(len(mfit_data)):
             #labeled as '1' and is photometry
             if str(mfit_data[j][2]) == '1' and str(mfit_data[j][1]) == 'ph':
                 #generate a photometry object
                 ph_object = CPhotometry(self, inhibit_load_spectra=True)
+                #filter name
+                ph_object.filter_name = str( mfit_data[j][5]).split('/')[-1].split('.dat')[0]
+                #filter_path
+                ph_object.filter_path = str(mfit_data[j][5])
                 #set wavelength range
                 wvmin, wvmax = float(mfit_data[j][3]), float(mfit_data[j][4])
                 ph_object.set_wv_range(wvmin, wvmax)
@@ -3024,16 +3094,16 @@ class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
                 #type label
                 ph_object.data_type = mfit_data[j][1]
                 #info field (data path)
-                ph_object.info = str(mfit_data[j][0]) 
-                #filter name
-                ph_object.filter_name = str( mfit_data[j][5]).split('/')[-1].split('.dat')[0]
-                #photometric offset
-                ph_object.z_ph = float(mfit_data[j][6])
+                ph_object.info = str(mfit_data[j][0])
+                #name
+                ph_object.name = str(mfit_data[j][0]).split('/')[-1]
                 #photometric jitter
                 try:
-                    ph_object.jitter = float(mfit_data[j][7])
+                    ph_object.jitter = float(mfit_data[j][6])
                 except:
                     ph_object.jitter = 0.0 
+                #read photometric zero
+                #ph_object.z_ph = float(mfit_data[j][7]) 
                 #null model logL
                 ph_object.logL_null_model()
                 #finally, append this object to the list
@@ -3053,9 +3123,11 @@ class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
                 rv_object.data_type = mfit_data[j][1]
                 #RV jitter
                 try:
-                    rv_object.jitter = float(mfit_data[j][7])
+                    rv_object.jitter = float(mfit_data[j][6])
                 except:
                     rv_object.jitter = 0.0
+                #name
+                rv_object.name = str(str(mfit_data[j][0]).split('/')[-1].split('.')[0])
                 #null model logL
                 rv_object.logL_null_model()
                 #finally, append it to the list
@@ -3064,14 +3136,23 @@ class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
             #labeled as '1' and is BIS   
             elif str(mfit_data[j][2]) == '1' and str(mfit_data[j][1]) == 'bis':
                 #generate a RV object
-                BIS_object = CBIS(self)
+                BIS_object = CBIS(self, inhibit_load_spectra=True)
                 #set wavelength range
                 wvmin, wvmax = float(mfit_data[j][3]), float(mfit_data[j][4])
                 BIS_object.set_wv_range(wvmin, wvmax)
                 #time / data arrays
                 BIS_object.science_data = file_path=mfit_data[j][0]
                 BIS_object.load_observational_data(file_path=mfit_data[j][0])
-                BIS_object.khi2_normalization_factor()
+                
+                #BIS_object.khi2_normalization_factor()
+                
+                #BIS jitter
+                try:
+                    BIS_object.jitter = float(mfit_data[j][6])
+                except:
+                    BIS_object.jitter = 0.0
+                #null model logL
+                BIS_object.logL_null_model()
                 #type label
                 BIS_object.data_type = mfit_data[j][1]
                 #finally, append it to the list
@@ -3109,12 +3190,21 @@ class StarsimSimulation(Star, Spots, Planet, SimulatedAnnealing):
                 #finally, append it to the list
                 self.Observables.append( CONTRAST_object )
                 
+            #labeled as '1' and is crx  
+            elif str(mfit_data[j][2]) == '1' and str(mfit_data[j][1]) == 'crx':
+                #generate CRX
+                CRX_object = CCRX(self)
+                #time / data arrays
+                CRX_object.science_data = file_path=mfit_data[j][0]
+                CRX_object.load_observational_data(file_path=mfit_data[j][0])
+                #type label
+                CRX_object.data_type = mfit_data[j][1]
+                #finally, append it to the list
+                self.Observables.append( CRX_object )
+                
         #find min time and max time for current datasets
         self.dt1 = min([min(object.obs_time) for object in self.Observables])  
         self.dt2 = max([max(object.obs_time) for object in self.Observables]) 
-         
+        
         return self.Observables
      
-
-          
-           

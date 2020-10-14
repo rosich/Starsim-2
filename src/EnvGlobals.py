@@ -8,5 +8,7 @@ class Glob(object):
     save_ccfs = False
     indices = False
     bw = False
-   
+    save_spectra = False  
+    testing = False
+    TIME = 0.0
  
